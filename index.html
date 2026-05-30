@@ -71,18 +71,17 @@
     ctx.strokeStyle = '#333';
     let drawing = false;
 
-    // 設定復元
     const savedPenSize = localStorage.getItem('penSize') || 6;
     ctx.lineWidth = Number(savedPenSize);
     penSizeInput.value = savedPenSize;
 
-    // Canvas描画イベント
     function getPos(e) {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         return { x: clientX - rect.left, y: clientY - rect.top };
     }
+
     canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); };
     canvas.onmousemove = (e) => { if(drawing) { const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); } };
     canvas.onmouseup = () => drawing = false;
@@ -117,7 +116,6 @@
         isAnswerVisible = false; isHintVisible = false;
         currentIndex = available[Math.floor(Math.random() * available.length)];
         
-        // 見た問題として記録
         seenIndices.add(currentIndex);
         localStorage.setItem('seenIndices', JSON.stringify([...seenIndices]));
 
@@ -138,7 +136,8 @@
         questions.forEach((q, i) => { 
             if(seenIndices.has(i)) {
                 const checked = solvedIndices.has(i) ? "checked" : "";
-                const fullSentence = `${q.p1}${q.a}${q.p2}`;
+                // 答え(漢字)ではなく、ひらがな(prob)を赤字で表示
+                const fullSentence = `${q.p1}<span style="color:red; font-weight:bold;">${q.prob}</span>${q.p2}`;
                 list.innerHTML += `<div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 5px;">
                     <input type="checkbox" ${checked} onchange="toggleSolved(${i}, this.checked)"> ${fullSentence}</div>`;
             }
