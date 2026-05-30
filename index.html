@@ -97,7 +97,7 @@
     function loadQuestion() {
         if (questions.length === 0) return;
         const item = questions[currentIndex];
-        qText.innerHTML = `問題: ${item.p1}<span class="blank">${item.prob}</span>${item.p2}`;
+        qText.innerHTML = ` ${item.p1}<span class="blank">${item.prob}</span>${item.p2}`;
         
         // 問題が変わったら表示フラグをリセット
         isAnswerVisible = false;
