@@ -38,8 +38,7 @@
         <button onclick="openModal()" style="background-color: #2196F3; color: white;">回答一覧</button>
     </div>
     <div style="margin-top: 15px;">
-        <button onclick="resetSolved()" style="background-color: #f44336; color: white;">全リセット</button>
-        <label style="margin-left:20px;">太さ: </label>
+        <label>ペンの太さ: </label>
         <input type="range" id="pen-size" min="2" max="20" value="6" oninput="updatePenSize(this.value)">
     </div>
 </div>
@@ -47,8 +46,9 @@
 <div id="modal">
     <div class="modal-content">
         <h3>回答一覧</h3>
-        <div id="solved-list" style="text-align: left; max-height: 300px; overflow-y: auto;"></div>
-        <button onclick="closeModal()" style="margin-top:20px;">閉じる</button>
+        <div id="solved-list" style="text-align: left; max-height: 300px; overflow-y: auto; margin-bottom: 15px;"></div>
+        <button onclick="resetSolved()" style="background-color: #f44336; color: white;">全リセット</button>
+        <button onclick="closeModal()">閉じる</button>
     </div>
 </div>
 
@@ -56,6 +56,7 @@
     let questions = [];
     let currentIndex = 0;
     let solvedIndices = new Set();
+    let seenIndices = new Set();
     let isAnswerVisible = false;
     let isHintVisible = false;
     
@@ -70,18 +71,18 @@
     ctx.strokeStyle = '#333';
     let drawing = false;
 
-    // ペンの太さ復元
+    // 設定復元
     const savedPenSize = localStorage.getItem('penSize') || 6;
     ctx.lineWidth = Number(savedPenSize);
     penSizeInput.value = savedPenSize;
 
+    // Canvas描画イベント
     function getPos(e) {
         const rect = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         return { x: clientX - rect.left, y: clientY - rect.top };
     }
-
     canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); };
     canvas.onmousemove = (e) => { if(drawing) { const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); } };
     canvas.onmouseup = () => drawing = false;
@@ -97,8 +98,11 @@
             const rows = data.split('\n').filter(r => r.trim() !== "").slice(1);
             questions = rows.map(r => { const c = r.split(','); return { p1: c[1], prob: c[2], p2: c[3], a: c[4].trim(), hint: c[5] ? c[5].trim() : "なし" }; });
             
-            const saved = localStorage.getItem('solvedIndices');
-            if (saved) solvedIndices = new Set(JSON.parse(saved));
+            const savedSolved = localStorage.getItem('solvedIndices');
+            if (savedSolved) solvedIndices = new Set(JSON.parse(savedSolved));
+            const savedSeen = localStorage.getItem('seenIndices');
+            if (savedSeen) seenIndices = new Set(JSON.parse(savedSeen));
+            
             loadQuestion();
         } catch (e) { qText.innerText = "読み込みエラー"; }
     }
@@ -110,45 +114,56 @@
             aDisplay.innerText = ""; hDisplay.innerText = "";
             return; 
         }
-        
-        isAnswerVisible = false;
-        isHintVisible = false;
+        isAnswerVisible = false; isHintVisible = false;
         currentIndex = available[Math.floor(Math.random() * available.length)];
-        const q = questions[currentIndex];
         
+        // 見た問題として記録
+        seenIndices.add(currentIndex);
+        localStorage.setItem('seenIndices', JSON.stringify([...seenIndices]));
+
+        const q = questions[currentIndex];
         qText.innerHTML = `<div style="font-size: 0.9rem; color: #666;">${solvedIndices.size}問正解 / 全${questions.length}問中</div>${q.p1}<span class="blank">${q.prob}</span>${q.p2}`;
         clearCanvas(); aDisplay.innerText = ""; hDisplay.innerText = "";
     }
 
     function markAsSolved() { solvedIndices.add(currentIndex); saveAndLoad(); }
     function nextQuestion() { loadQuestion(); }
-    function saveAndLoad() { localStorage.setItem('solvedIndices', JSON.stringify([...solvedIndices])); loadQuestion(); }
+    function saveAndLoad() { 
+        localStorage.setItem('solvedIndices', JSON.stringify([...solvedIndices])); 
+        loadQuestion(); 
+    }
     
-    function showAnswer() { 
-        isAnswerVisible = !isAnswerVisible;
-        aDisplay.innerText = isAnswerVisible ? "答え: " + questions[currentIndex].a : ""; 
-    }
-    function showHint() { 
-        isHintVisible = !isHintVisible;
-        hDisplay.innerText = isHintVisible ? "ヒント: " + questions[currentIndex].hint : ""; 
-    }
-
     function openModal() {
         const list = document.getElementById('solved-list'); list.innerHTML = "";
         questions.forEach((q, i) => { 
-            if(solvedIndices.has(i)) {
+            if(seenIndices.has(i)) {
+                const checked = solvedIndices.has(i) ? "checked" : "";
                 const fullSentence = `${q.p1}${q.a}${q.p2}`;
                 list.innerHTML += `<div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 5px;">
-                    <input type="checkbox" checked onchange="toggleSolved(${i})"> ${fullSentence}</div>`;
+                    <input type="checkbox" ${checked} onchange="toggleSolved(${i}, this.checked)"> ${fullSentence}</div>`;
             }
         });
         document.getElementById('modal').style.display = 'block';
     }
     
-    function toggleSolved(i) { solvedIndices.delete(i); saveAndLoad(); openModal(); }
+    function toggleSolved(i, isChecked) {
+        if (isChecked) solvedIndices.add(i);
+        else solvedIndices.delete(i);
+        saveAndLoad();
+    }
+    
     function closeModal() { document.getElementById('modal').style.display = 'none'; }
-    function resetSolved() { if(confirm("全消去しますか？")) { solvedIndices.clear(); saveAndLoad(); closeModal(); } }
+    function resetSolved() { 
+        if(confirm("全リセットして最初から始めますか？")) { 
+            solvedIndices.clear(); seenIndices.clear();
+            localStorage.removeItem('solvedIndices');
+            localStorage.removeItem('seenIndices');
+            loadQuestion(); closeModal(); 
+        } 
+    }
     function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+    function showAnswer() { isAnswerVisible = !isAnswerVisible; aDisplay.innerText = isAnswerVisible ? "答え: " + questions[currentIndex].a : ""; }
+    function showHint() { isHintVisible = !isHintVisible; hDisplay.innerText = isHintVisible ? "ヒント: " + questions[currentIndex].hint : ""; }
     function updatePenSize(s) { const val = Number(s); ctx.lineWidth = val; localStorage.setItem('penSize', val); }
 
     loadCSV();
