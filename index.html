@@ -46,7 +46,7 @@
 
 <div id="modal">
     <div class="modal-content">
-        <h3>正解した問題リスト</h3>
+        <h3>回答一覧</h3>
         <div id="solved-list" style="text-align: left; max-height: 300px; overflow-y: auto;"></div>
         <button onclick="closeModal()" style="margin-top:20px;">閉じる</button>
     </div>
@@ -56,6 +56,9 @@
     let questions = [];
     let currentIndex = 0;
     let solvedIndices = new Set();
+    let isAnswerVisible = false;
+    let isHintVisible = false;
+    
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const qText = document.getElementById('question-text');
@@ -63,7 +66,6 @@
     const hDisplay = document.getElementById('hint-display');
     const penSizeInput = document.getElementById('pen-size');
 
-    // 描画設定
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#333';
     let drawing = false;
@@ -103,15 +105,34 @@
 
     function loadQuestion() {
         let available = questions.map((_, i) => i).filter(i => !solvedIndices.has(i));
-        if (available.length === 0) { qText.innerText = "全問制覇！おめでとう！"; return; }
+        if (available.length === 0) { 
+            qText.innerText = "全問制覇！おめでとう！"; 
+            aDisplay.innerText = ""; hDisplay.innerText = "";
+            return; 
+        }
+        
+        isAnswerVisible = false;
+        isHintVisible = false;
         currentIndex = available[Math.floor(Math.random() * available.length)];
-        qText.innerHTML = `<div style="font-size: 0.9rem; color: #666;">${solvedIndices.size}問正解 / 全${questions.length}問中</div>${questions[currentIndex].p1}<span class="blank">${questions[currentIndex].prob}</span>${questions[currentIndex].p2}`;
+        const q = questions[currentIndex];
+        
+        qText.innerHTML = `<div style="font-size: 0.9rem; color: #666;">${solvedIndices.size}問正解 / 全${questions.length}問中</div>${q.p1}<span class="blank">${q.prob}</span>${q.p2}`;
         clearCanvas(); aDisplay.innerText = ""; hDisplay.innerText = "";
     }
 
     function markAsSolved() { solvedIndices.add(currentIndex); saveAndLoad(); }
+    function nextQuestion() { loadQuestion(); }
     function saveAndLoad() { localStorage.setItem('solvedIndices', JSON.stringify([...solvedIndices])); loadQuestion(); }
     
+    function showAnswer() { 
+        isAnswerVisible = !isAnswerVisible;
+        aDisplay.innerText = isAnswerVisible ? "答え: " + questions[currentIndex].a : ""; 
+    }
+    function showHint() { 
+        isHintVisible = !isHintVisible;
+        hDisplay.innerText = isHintVisible ? "ヒント: " + questions[currentIndex].hint : ""; 
+    }
+
     function openModal() {
         const list = document.getElementById('solved-list'); list.innerHTML = "";
         questions.forEach((q, i) => { 
@@ -128,8 +149,6 @@
     function closeModal() { document.getElementById('modal').style.display = 'none'; }
     function resetSolved() { if(confirm("全消去しますか？")) { solvedIndices.clear(); saveAndLoad(); closeModal(); } }
     function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
-    function showAnswer() { aDisplay.innerText = "答え: " + questions[currentIndex].a; }
-    function showHint() { hDisplay.innerText = "ヒント: " + questions[currentIndex].hint; }
     function updatePenSize(s) { const val = Number(s); ctx.lineWidth = val; localStorage.setItem('penSize', val); }
 
     loadCSV();
