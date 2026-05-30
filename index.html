@@ -5,24 +5,17 @@
     <title>漢字練習アプリ</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #f9f9f9; padding: 20px; }
-        .container { background: white; padding: 30px; border-radius: 15px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { background: white; padding: 30px; border-radius: 15px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 650px; }
         .canvas-container { position: relative; width: 600px; height: 150px; margin: 20px auto; border: 2px solid #ccc; background: #fff; touch-action: none; }
         #canvas { position: absolute; top: 0; left: 0; z-index: 2; cursor: crosshair; }
         #question-text { font-size: 1.8rem; margin-bottom: 20px; font-weight: bold; }
         #answer-display, #hint-display { font-size: 1.5rem; margin: 10px 0; min-height: 2rem; font-weight: bold; }
         #answer-display { color: #d32f2f; }
         #hint-display { color: #388e3c; }
-        button { font-size: 1.2rem; padding: 10px 20px; cursor: pointer; margin: 5px; }
-        
-        .blank {
-            border-bottom: 3px solid #333;
-            display: inline-block;
-            min-width: 40px;
-            text-align: center;
-            margin: 0 5px;
-            padding-bottom: 2px;
-            font-weight: bold;
-        }
+        button { font-size: 1.1rem; padding: 8px 15px; cursor: pointer; margin: 5px; border-radius: 5px; border: none; }
+        .blank { border-bottom: 3px solid #333; display: inline-block; min-width: 40px; text-align: center; margin: 0 5px; padding-bottom: 2px; font-weight: bold; }
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10; overflow-y: auto; }
+        .modal-content { background: white; margin: 50px auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 10px; }
     </style>
 </head>
 <body>
@@ -37,120 +30,107 @@
     <div id="hint-display"></div>
     
     <div>
-        <button onclick="showAnswer()">答えを見る</button>
+        <button onclick="markAsSolved()" style="background-color: #4CAF50; color: white;">正解！</button>
+        <button onclick="showAnswer()">答え</button>
         <button onclick="showHint()">ヒント</button>
         <button onclick="clearCanvas()">消す</button>
-        <button onclick="nextQuestion()">次の問題</button>
+        <button onclick="nextQuestion()">次へ</button>
+        <button onclick="openModal()" style="background-color: #2196F3; color: white;">回答一覧</button>
     </div>
-    <div>
-        <label>ペンの太さ: </label>
+    <div style="margin-top: 15px;">
+        <button onclick="resetSolved()" style="background-color: #f44336; color: white;">全リセット</button>
+        <label style="margin-left:20px;">太さ: </label>
         <input type="range" id="pen-size" min="2" max="20" value="6" oninput="updatePenSize(this.value)">
+    </div>
+</div>
+
+<div id="modal">
+    <div class="modal-content">
+        <h3>正解した問題リスト</h3>
+        <div id="solved-list" style="text-align: left; max-height: 300px; overflow-y: auto;"></div>
+        <button onclick="closeModal()" style="margin-top:20px;">閉じる</button>
     </div>
 </div>
 
 <script>
     let questions = [];
     let currentIndex = 0;
-    // 表示状態を管理するフラグ
-    let isAnswerVisible = false;
-    let isHintVisible = false;
-
+    let solvedIndices = new Set();
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const qText = document.getElementById('question-text');
     const aDisplay = document.getElementById('answer-display');
     const hDisplay = document.getElementById('hint-display');
+    const penSizeInput = document.getElementById('pen-size');
 
-    // 1. データ読み込み
+    // 描画設定
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#333';
+    let drawing = false;
+
+    // ペンの太さ復元
+    const savedPenSize = localStorage.getItem('penSize') || 6;
+    ctx.lineWidth = Number(savedPenSize);
+    penSizeInput.value = savedPenSize;
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    canvas.onmousedown = (e) => { drawing = true; ctx.beginPath(); };
+    canvas.onmousemove = (e) => { if(drawing) { const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); } };
+    canvas.onmouseup = () => drawing = false;
+    canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); e.preventDefault(); };
+    canvas.ontouchmove = (e) => { if(drawing) { const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); } };
+    canvas.ontouchend = () => drawing = false;
+
     async function loadCSV() {
         const webAppUrl = 'https://script.google.com/macros/s/AKfycbyp3nn8x69YijZ8WBadZGhm2QZVxUfpSqjlG7WsJE4QTWT9ppVUrVJyKaj9gcOyQw/exec';
-        
         try {
             const response = await fetch(webAppUrl);
             const data = await response.text();
+            const rows = data.split('\n').filter(r => r.trim() !== "").slice(1);
+            questions = rows.map(r => { const c = r.split(','); return { p1: c[1], prob: c[2], p2: c[3], a: c[4].trim(), hint: c[5] ? c[5].trim() : "なし" }; });
             
-            const rows = data.split('\n').filter(row => row.trim() !== "").slice(1);
-            questions = rows.map(row => {
-                const cols = row.split(',');
-                return { 
-                    p1: cols[1], 
-                    prob: cols[2], 
-                    p2: cols[3], 
-                    a: cols[4].trim(),
-                    hint: cols[5] ? cols[5].trim() : "ヒントはありません"
-                };
-            });
-
-            // シャッフル
-            for (let i = questions.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [questions[i], questions[j]] = [questions[j], questions[i]];
-            }
-
+            const saved = localStorage.getItem('solvedIndices');
+            if (saved) solvedIndices = new Set(JSON.parse(saved));
             loadQuestion();
-        } catch (error) {
-            qText.innerText = "読み込みエラーです。";
-        }
+        } catch (e) { qText.innerText = "読み込みエラー"; }
     }
 
-    // 2. 画面操作
     function loadQuestion() {
-        if (questions.length === 0) return;
-        const item = questions[currentIndex];
-        qText.innerHTML = ` ${item.p1}<span class="blank">${item.prob}</span>${item.p2}`;
-        
-        // 問題が変わったら表示フラグをリセット
-        isAnswerVisible = false;
-        isHintVisible = false;
-        aDisplay.innerText = "";
-        hDisplay.innerText = "";
-        clearCanvas();
+        let available = questions.map((_, i) => i).filter(i => !solvedIndices.has(i));
+        if (available.length === 0) { qText.innerText = "全問制覇！おめでとう！"; return; }
+        currentIndex = available[Math.floor(Math.random() * available.length)];
+        qText.innerHTML = `<div style="font-size: 0.9rem; color: #666;">${solvedIndices.size}問正解 / 全${questions.length}問中</div>${questions[currentIndex].p1}<span class="blank">${questions[currentIndex].prob}</span>${questions[currentIndex].p2}`;
+        clearCanvas(); aDisplay.innerText = ""; hDisplay.innerText = "";
     }
 
-    function showAnswer() {
-        isAnswerVisible = !isAnswerVisible;
-        aDisplay.innerText = isAnswerVisible ? "答え: " + questions[currentIndex].a : "";
+    function markAsSolved() { solvedIndices.add(currentIndex); saveAndLoad(); }
+    function saveAndLoad() { localStorage.setItem('solvedIndices', JSON.stringify([...solvedIndices])); loadQuestion(); }
+    
+    function openModal() {
+        const list = document.getElementById('solved-list'); list.innerHTML = "";
+        questions.forEach((q, i) => { 
+            if(solvedIndices.has(i)) {
+                const fullSentence = `${q.p1}${q.a}${q.p2}`;
+                list.innerHTML += `<div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 5px;">
+                    <input type="checkbox" checked onchange="toggleSolved(${i})"> ${fullSentence}</div>`;
+            }
+        });
+        document.getElementById('modal').style.display = 'block';
     }
-
-    function showHint() {
-        isHintVisible = !isHintVisible;
-        hDisplay.innerText = isHintVisible ? "ヒント: " + questions[currentIndex].hint : "";
-    }
-
+    
+    function toggleSolved(i) { solvedIndices.delete(i); saveAndLoad(); openModal(); }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    function resetSolved() { if(confirm("全消去しますか？")) { solvedIndices.clear(); saveAndLoad(); closeModal(); } }
     function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
-
-    function nextQuestion() {
-        currentIndex = (currentIndex + 1) % questions.length;
-        loadQuestion();
-    }
-
-    // 3. 描画初期化
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#333';
-
-    function updatePenSize(size) { ctx.lineWidth = size; }
-
-    let drawing = false;
-    canvas.addEventListener('mousedown', () => drawing = true);
-    canvas.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
-    canvas.addEventListener('mousemove', (e) => {
-        if (!drawing) return;
-        const rect = canvas.getBoundingClientRect();
-        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-        ctx.stroke();
-    });
-
-    canvas.addEventListener('touchstart', (e) => { drawing = true; e.preventDefault(); });
-    canvas.addEventListener('touchend', () => { drawing = false; ctx.beginPath(); });
-    canvas.addEventListener('touchmove', (e) => {
-        if (!drawing) return;
-        const rect = canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
-        ctx.stroke();
-        e.preventDefault();
-    });
+    function showAnswer() { aDisplay.innerText = "答え: " + questions[currentIndex].a; }
+    function showHint() { hDisplay.innerText = "ヒント: " + questions[currentIndex].hint; }
+    function updatePenSize(s) { const val = Number(s); ctx.lineWidth = val; localStorage.setItem('penSize', val); }
 
     loadCSV();
 </script>
